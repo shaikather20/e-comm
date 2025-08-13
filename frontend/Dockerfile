@@ -1,32 +1,31 @@
-# Stage 1: Build the application
-FROM node:18 AS builder
-
-# Set working directory
+# Stage 1: Build dependencies
+FROM node:18 AS deps
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
 
-# Copy package files first for better caching
-COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy all files
-COPY . .
-
-# Build the application
+# Stage 2: Build application
+FROM node:18 AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ .
 RUN npm run build
 
-# Stage 2: Serve the application
+# Stage 3: Runtime
 FROM nginx:alpine
-
-# Copy built assets from builder
+RUN rm /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY <<EOF /etc/nginx/conf.d/default.conf
+server {
+    listen 80;
+    server_name localhost;
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Expose port
 EXPOSE 80
-
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
